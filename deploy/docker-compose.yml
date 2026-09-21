@@ -1,0 +1,238 @@
+# Self-hosted Supabase-compatible stack + the portal, on the Hostinger VPS.
+#
+# Only ONE public hostname is used. Traefik fans paths out to the right service,
+# which is what lets @supabase/supabase-js point at a single origin:
+#
+#   /auth/v1/*  → GoTrue     (StripPrefix)
+#   /rest/v1/*  → PostgREST  (StripPrefix)
+#   everything else → the Next.js portal
+#
+# Traefik runs in host network mode on this box, so every service that it routes
+# to declares traefik.docker.network explicitly.
+
+services:
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: upwork-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      TZ: Asia/Kolkata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Not published to the host: reachable only on the internal network.
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [default]
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # --------------------------------------------------------------------------
+  auth:
+    image: supabase/gotrue:v2.158.1
+    container_name: upwork-auth
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      PORT: '9999'
+      API_EXTERNAL_URL: ${PUBLIC_URL}
+      GOTRUE_SITE_URL: ${PUBLIC_URL}
+      GOTRUE_URI_ALLOW_LIST: ${PUBLIC_URL}/**
+
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${AUTH_ADMIN_PASSWORD}@postgres:5432/postgres?search_path=auth&sslmode=disable
+
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: '3600'
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+
+      # Accounts are created by an owner from /team, never self-served. This is
+      # a public hostname; an open signup endpoint has no business on it.
+      GOTRUE_DISABLE_SIGNUP: 'true'
+      # No SMTP is configured anywhere in this stack, so nothing may depend on
+      # an email being delivered. Admin-created users are confirmed outright.
+      GOTRUE_MAILER_AUTOCONFIRM: 'true'
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'
+      GOTRUE_EXTERNAL_PHONE_ENABLED: 'false'
+      GOTRUE_SMS_AUTOCONFIRM: 'true'
+      GOTRUE_LOG_LEVEL: info
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:9999/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [default]
+    labels:
+      traefik.enable: 'true'
+      traefik.docker.network: upwork-portal_default
+      traefik.http.routers.upworkauth.rule: 'Host(`${PUBLIC_HOST}`) && PathPrefix(`/auth/v1`)'
+      traefik.http.routers.upworkauth.entrypoints: websecure
+      traefik.http.routers.upworkauth.tls.certresolver: letsencrypt
+      # Higher than the portal's router so /auth/v1 is never swallowed by the
+      # catch-all — the portal has its own /auth/callback path.
+      traefik.http.routers.upworkauth.priority: '100'
+      traefik.http.routers.upworkauth.middlewares: upworkauth-strip
+      traefik.http.routers.upworkauth.service: upworkauth
+      traefik.http.middlewares.upworkauth-strip.stripprefix.prefixes: /auth/v1
+      traefik.http.services.upworkauth.loadbalancer.server.port: '9999'
+    logging: *logging
+
+  # --------------------------------------------------------------------------
+  rest:
+    image: postgrest/postgrest:v12.2.3
+    container_name: upwork-rest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${AUTHENTICATOR_PASSWORD}@postgres:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: 'false'
+      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
+      PGRST_OPENAPI_MODE: ignore-privileges
+    networks: [default]
+    labels:
+      traefik.enable: 'true'
+      traefik.docker.network: upwork-portal_default
+      traefik.http.routers.upworkrest.rule: 'Host(`${PUBLIC_HOST}`) && PathPrefix(`/rest/v1`)'
+      traefik.http.routers.upworkrest.entrypoints: websecure
+      traefik.http.routers.upworkrest.tls.certresolver: letsencrypt
+      traefik.http.routers.upworkrest.priority: '100'
+      traefik.http.routers.upworkrest.middlewares: upworkrest-strip
+      traefik.http.routers.upworkrest.service: upworkrest
+      traefik.http.middlewares.upworkrest-strip.stripprefix.prefixes: /rest/v1
+      traefik.http.services.upworkrest.loadbalancer.server.port: '3000'
+    logging: *logging
+
+  # --------------------------------------------------------------------------
+  portal:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${PUBLIC_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
+        NEXT_PUBLIC_APP_URL: ${PUBLIC_URL}
+        NEXT_PUBLIC_AGENCY_NAME: ${AGENCY_NAME:-Your Agency}
+    image: upwork-agency-portal:latest
+    container_name: upwork-portal
+    restart: unless-stopped
+    depends_on:
+      auth:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: '3050'
+      # The team is in India. Rendering is pinned to Asia/Kolkata in
+      # src/lib/format.ts regardless, but matching the container avoids
+      # confusing timestamps in logs and any ambient Date arithmetic.
+      TZ: Asia/Kolkata
+      NEXT_PUBLIC_SUPABASE_URL: ${PUBLIC_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
+      NEXT_PUBLIC_APP_URL: ${PUBLIC_URL}
+      NEXT_PUBLIC_AGENCY_NAME: ${AGENCY_NAME:-Your Agency}
+      HOLIDAYS_URL: ${HOLIDAYS_URL:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}
+      UPWORK_CLIENT_ID: ${UPWORK_CLIENT_ID:-}
+      UPWORK_CLIENT_SECRET: ${UPWORK_CLIENT_SECRET:-}
+      UPWORK_REDIRECT_URI: ${UPWORK_REDIRECT_URI:-}
+      # Per-tool write allowlist, comma separated. Empty means fully read-only.
+      # `send_message` is enabled because a person types the reply and presses
+      # send. Proposal and milestone writes stay off — Upwork's automation
+      # policy names proposal spam specifically, so they get their own decision.
+      UPWORK_ALLOWED_WRITES: ${UPWORK_ALLOWED_WRITES:-}
+      SYNC_SECRET: ${SYNC_SECRET}
+      # Secret path segment for the no-login status board at /status/<token>.
+      # Optional: unset means the board 404s and does not exist.
+      STATUS_BOARD_TOKEN: ${STATUS_BOARD_TOKEN:-}
+      # The WhatsApp portal's read-only waiting feed, so the status board can
+      # show both channels. Both were set in .env and never listed here, so the
+      # board has been showing Upwork only — this compose file has no env_file,
+      # so a variable that is not named here does not exist to the app.
+      WHATSAPP_FEED_URL: ${WHATSAPP_FEED_URL:-}
+      WHATSAPP_FEED_TOKEN: ${WHATSAPP_FEED_TOKEN:-}
+    networks: [default]
+    labels:
+      traefik.enable: 'true'
+      traefik.docker.network: upwork-portal_default
+      traefik.http.routers.upworkportal.rule: 'Host(`${PUBLIC_HOST}`)'
+      traefik.http.routers.upworkportal.entrypoints: websecure
+      traefik.http.routers.upworkportal.tls.certresolver: letsencrypt
+      traefik.http.routers.upworkportal.priority: '1'
+      traefik.http.routers.upworkportal.middlewares: upworkportal-sec
+      traefik.http.routers.upworkportal.service: upworkportal
+
+      # The branded hostname deliberately lives in docker-compose.branded.yml,
+      # not here. Traefik would ask Let's Encrypt for a certificate the moment
+      # the router exists, and the ACME challenge cannot succeed until the A
+      # record is in place — repeated failures count against a per-hour limit.
+      traefik.http.services.upworkportal.loadbalancer.server.port: '3050'
+      traefik.http.middlewares.upworkportal-sec.headers.stsSeconds: '31536000'
+      traefik.http.middlewares.upworkportal-sec.headers.frameDeny: 'true'
+      traefik.http.middlewares.upworkportal-sec.headers.contentTypeNosniff: 'true'
+      traefik.http.middlewares.upworkportal-sec.headers.referrerPolicy: no-referrer
+    logging: *logging
+
+  # --------------------------------------------------------------------------
+  # Unattended sync.
+  #
+  # Upwork has no webhooks — none of their official SDKs ship a subscription
+  # router — so new messages have to be polled for. One request per profile per
+  # tick detects activity across every conversation, because the room list
+  # carries each one's latest message id.
+  #
+  # Talks to the portal over the internal network, so the tick never leaves the
+  # host and does not depend on public DNS or TLS.
+  sync:
+    image: curlimages/curl:8.11.1
+    container_name: upwork-sync
+    restart: unless-stopped
+    depends_on:
+      portal:
+        condition: service_started
+    environment:
+      SYNC_SECRET: ${SYNC_SECRET}
+      SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS:-60}
+      TZ: Asia/Kolkata
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        echo "sync loop starting, every $${SYNC_INTERVAL_SECONDS}s"
+        # Give the portal a moment to finish booting before the first tick.
+        sleep 20
+        while true; do
+          code=$$(curl -s -o /tmp/out -w '%{http_code}' -m 120 \
+            -X POST http://portal:3050/api/sync \
+            -H "x-sync-key: $${SYNC_SECRET}" || echo 000)
+          if [ "$$code" != "200" ] && [ "$$code" != "202" ]; then
+            echo "$$(date '+%H:%M:%S') sync tick http=$$code $$(head -c 200 /tmp/out)"
+          fi
+          sleep $${SYNC_INTERVAL_SECONDS}
+        done
+    networks: [default]
+    logging: *logging
+
+volumes:
+  postgres-data:
+
+networks:
+  default:
+    name: upwork-portal_default

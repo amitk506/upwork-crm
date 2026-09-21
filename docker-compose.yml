@@ -1,0 +1,44 @@
+# Deployed to the Hostinger VPS alongside the other agency services.
+# Traefik runs in host network mode there, so it is told explicitly which
+# docker network to reach this container on.
+services:
+  portal:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+    image: upwork-agency-portal:latest
+    container_name: upwork-portal
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "3050"
+      NODE_ENV: production
+    networks:
+      - default
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: upwork-portal_default
+
+      traefik.http.routers.upworkportal.rule: "Host(`${PUBLIC_HOST}`)"
+      traefik.http.routers.upworkportal.entrypoints: websecure
+      traefik.http.routers.upworkportal.tls.certresolver: letsencrypt
+      traefik.http.routers.upworkportal.middlewares: upworkportal-sec
+      traefik.http.routers.upworkportal.service: upworkportal
+
+      traefik.http.services.upworkportal.loadbalancer.server.port: "3050"
+      traefik.http.middlewares.upworkportal-sec.headers.stsSeconds: "31536000"
+      traefik.http.middlewares.upworkportal-sec.headers.frameDeny: "true"
+      traefik.http.middlewares.upworkportal-sec.headers.contentTypeNosniff: "true"
+      traefik.http.middlewares.upworkportal-sec.headers.referrerPolicy: no-referrer
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  default:
+    name: upwork-portal_default

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Upwork Agency Portal">
+  <!--
+    A green tile with a white conversation mark.
+
+    Green because the owner asked for something that reads as the Upwork
+    workspace at a glance, and colour is what carries that association in a 16px
+    tab. NOT Upwork's own #14A800, and deliberately not their arrow mark or
+    wordmark: a colour family is an association, a logo is a trademark, and this
+    portal is served from a hostname that already contains "upwork" — a
+    convincing copy of their mark on that domain is the exact combination that
+    got this site flagged as phishing by Safe Browsing once already.
+
+    The glyph is a speech bubble because at tab size a silhouette has to say what
+    the tool IS in one shape, and this one is an inbox. The notch sits low-left so
+    the mark is asymmetric and therefore findable in a strip of similar tabs.
+
+    Drawn on a 32-unit grid with 2-unit minimum strokes, so nothing thins into a
+    smudge when it lands on 16 device pixels.
+  -->
+  <rect width="32" height="32" rx="7" fill="#1AA05C"/>
+  <path
+    d="M8 9.5h16a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1-2.5 2.5h-7.6l-4.6 3.4a.8.8 0 0 1-1.3-.64V22H8a2.5 2.5 0 0 1-2.5-2.5v-7.5A2.5 2.5 0 0 1 8 9.5Z"
+    fill="#FFFFFF"
+  />
+  <!-- Three dots: the several identities this one inbox speaks for. -->
+  <g fill="#1AA05C">
+    <circle cx="11.6" cy="15.6" r="1.5"/>
+    <circle cx="16" cy="15.6" r="1.5"/>
+    <circle cx="20.4" cy="15.6" r="1.5"/>
+  </g>
+</svg>

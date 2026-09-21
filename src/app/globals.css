@@ -1,0 +1,286 @@
+@import "tailwindcss";
+
+/* ===========================================================================
+   Upwork Agency Portal — an operations console for an agency working several
+   identities out of one inbox.
+
+   The organising idea: the important number is not "unread" and not "most
+   recent", it is HOW LONG A CLIENT HAS BEEN WAITING FOR A REPLY. That number is
+   derived (see src/lib/wait.ts), never set by hand, and it is the only thing in
+   the interface allowed to use loud colour.
+
+   Everything else is therefore deliberately quiet — hairlines instead of
+   shadows, one accent, monograms instead of photographs, no decoration. The
+   severity ramp reads instantly BECAUSE nothing competes with it.
+
+   Two colour rules:
+     · Semantic colour (waiting, paid, failed) is separate from the accent and
+       never used to make something look nice.
+     · Identity colour marks whose Upwork profile a conversation belongs to, and
+       is confined to a monogram tile and the 2px bar beneath it.
+
+   Palette note: success is a teal-shifted #0f8a6a chosen specifically to sit
+   away from Upwork's #14a800. Their API terms require the app avoid their name,
+   logo and brand colours, and a portal that wears them also reads as an
+   imitation of the site it talks to.
+   =========================================================================== */
+
+:root {
+  /* Neutrals are biased cool — hue ≈ 232, saturation under 12% — so the greys
+     belong to the accent rather than being an inherited mid-grey. */
+  --paper: #f7f8fb;
+  --surface: #ffffff;
+  --surface-sunk: #f1f3f8;
+  --surface-sunk-2: #e8ecf4;
+  --line: #e4e7ef;
+  --line-strong: #d2d8e4;
+
+  --ink: #15171f;
+  --ink-soft: #565c6d;
+  --ink-faint: #8b92a4;
+
+  /* One accent: a sober cobalt-indigo. Deliberately not a startup violet, and
+     deliberately not Upwork green. */
+  --accent: #3d45c9;
+  --accent-press: #31389f;
+  --accent-tint: #edeffd;
+  --accent-ink: #ffffff;
+
+  /* Primary actions now carry the accent; the old inverted-ink treatment made
+     every button on a page compete with the severity ramp for attention. */
+  --action: var(--accent);
+  --action-ink: var(--accent-ink);
+
+  /* Semantic status */
+  --ok: #0f8a6a;
+  --ok-tint: #e4f3ee;
+  --watch: #a8761f;
+  --watch-tint: #f8f1e3;
+  --warn: #b0530a;
+  --warn-tint: #fbede0;
+  --stop: #c42b48;
+  --stop-tint: #fbe8ec;
+
+  --focus: #3d45c9;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0c0e13;
+    --surface: #141721;
+    --surface-sunk: #1a1e29;
+    --surface-sunk-2: #212734;
+    --line: #262c39;
+    --line-strong: #353d4d;
+
+    --ink: #edeff5;
+    --ink-soft: #a3abbb;
+    --ink-faint: #717a8d;
+
+    /* Lifted, not inverted: #3d45c9 has too little contrast on a #0c0e13
+       ground to carry a primary button. */
+    --accent: #7c84f2;
+    --accent-press: #9ba1f7;
+    --accent-tint: #1d2140;
+    --accent-ink: #0c0e13;
+
+    --ok: #35b892;
+    --ok-tint: #0f2820;
+    --watch: #c99c48;
+    --watch-tint: #251e10;
+    --warn: #e0a24a;
+    --warn-tint: #2a1f11;
+    --stop: #f26f89;
+    --stop-tint: #2e1520;
+
+    --focus: #7c84f2;
+  }
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-sunk: var(--surface-sunk);
+  --color-sunk-2: var(--surface-sunk-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-soft: var(--ink-soft);
+  --color-faint: var(--ink-faint);
+  --color-accent: var(--accent);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-ink: var(--accent-ink);
+  --color-action: var(--action);
+  --color-action-ink: var(--action-ink);
+  --color-ok: var(--ok);
+  --color-ok-tint: var(--ok-tint);
+  --color-watch: var(--watch);
+  --color-watch-tint: var(--watch-tint);
+  --color-warn: var(--warn);
+  --color-warn-tint: var(--warn-tint);
+  --color-stop: var(--stop);
+  --color-stop-tint: var(--stop-tint);
+
+  --font-sans: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-data), ui-monospace, monospace;
+}
+
+* {
+  border-color: var(--line);
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  /* Inter benefits from a little negative tracking at UI sizes; its own
+     designer recommends it above ~14px and it keeps dense rows tidy. */
+  letter-spacing: -0.011em;
+}
+
+/* Figures.
+ *
+ * These stay in the interface face rather than switching to a monospace one.
+ * A mono face makes every count and timestamp read as code, and its slashed
+ * zero looks like a defect at display size.
+ *
+ * Inter's own tabular figures give the one property that matters: every digit
+ * the same width, so a wait meter ticking from 7h 09m to 7h 10m does not reflow
+ * the row it sits in. */
+.tabular {
+  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Real code — a callback URL, an id, a password to hand over — where a
+   monospace face is doing a job rather than decorating. */
+.code {
+  font-family: var(--font-mono);
+  font-feature-settings: 'zero' 1;
+  letter-spacing: -0.02em;
+}
+
+/* One visible focus treatment everywhere, keyboard-only. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* --------------------------------------------------------------------------
+   The severity ramp — the signature.
+
+   Four steps, and visual weight increases with each one. Fresh has no stripe
+   at all: the normal state should look like nothing, so that anything which
+   does carry a stripe is worth a glance.
+
+   The stripe is inset top and bottom so a run of rows reads as separate marks
+   rather than one continuous bar.
+   -------------------------------------------------------------------------- */
+.stripe {
+  position: relative;
+}
+
+.stripe::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--severity, transparent);
+}
+
+.sev-fresh {
+  --severity: transparent;
+}
+/* Half strength: still inside the promise, but visible when you scan. */
+.sev-watch {
+  --severity: color-mix(in oklab, var(--watch) 55%, transparent);
+}
+.sev-late {
+  --severity: var(--warn);
+}
+.sev-breached {
+  --severity: var(--stop);
+}
+
+/* The selected row wins over its own severity — you need to know where you are
+   more than you need to be told again that it is late. */
+.stripe[data-selected='true']::before {
+  background: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   Identity.
+   Confined to the monogram tile and the 2px bar under it, because the initials
+   carry the meaning and colour is only reinforcement.
+   -------------------------------------------------------------------------- */
+.identity-tile {
+  background: color-mix(in oklab, var(--identity) 15%, var(--surface));
+  color: var(--identity);
+  box-shadow: inset 0 -2px 0 var(--identity);
+}
+
+.identity-tile[data-size='sm'] {
+  box-shadow: inset 0 -1.5px 0 var(--identity);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .row-enter {
+    animation: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+  }
+
+  /* Crossing a threshold animates the stripe, so you catch the moment a
+     conversation goes Late out of the corner of your eye. */
+  .stripe::before {
+    transition: background-color 400ms ease;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Loading placeholders.
+   One 1.5s sweep, not a pulse: a sweep reads as "work in progress", while a
+   pulse on a dozen blocks at once reads as a fault.
+   -------------------------------------------------------------------------- */
+.skeleton {
+  background: var(--surface-sunk-2);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--surface-sunk-2) 0%,
+      var(--surface-sunk) 45%,
+      var(--surface-sunk-2) 90%
+    );
+    background-size: 280% 100%;
+    animation: skeleton-sweep 1.5s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-sweep {
+    from {
+      background-position: 120% 0;
+    }
+    to {
+      background-position: -40% 0;
+    }
+  }
+}
