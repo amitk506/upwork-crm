@@ -25,7 +25,7 @@ if ! flock -n 9; then
   exit 1
 fi
 
-COMPOSE=(docker compose --env-file .env -f docker-compose.yml)
+COMPOSE=(docker compose --env-file .env -f docker-compose.yml -f docker-compose.override.yml)
 if [[ "${1:-}" == "--branded" ]]; then
   COMPOSE+=(-f docker-compose.branded.yml)
   echo "→ including the branded hostname overlay"
@@ -83,8 +83,13 @@ psql_run -q < 02-auth-helpers.sql
 # guard and removed a reconnected Upwork profile on every deploy for a day.
 echo "→ [5/7] backing up portal data"
 if ! bash backup.sh; then
-  echo "!! backup failed — refusing to run migrations without one." >&2
-  exit 1
+  table_count=$(docker exec upwork-postgres psql -U postgres -d postgres -tAc "SELECT count(*) FROM pg_tables WHERE schemaname='public';")
+  if [[ "$table_count" -eq 0 ]]; then
+    echo "   fresh database — no backup needed"
+  else
+    echo "!! backup failed — refusing to run migrations without one." >&2
+    exit 1
+  fi
 fi
 
 echo "→ [5/7] portal migrations"
