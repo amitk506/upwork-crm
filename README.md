@@ -139,15 +139,46 @@ until an owner promotes them on `/team`.
 
 ### Upwork OAuth credentials
 
-No API key application needed — Upwork's MCP server exposes a live RFC 7591
-dynamic client registration endpoint that issues credentials instantly:
+Without these, Profiles shows *"UPWORK_CLIENT_ID is not set"* and no profile can
+be connected. No API key application is needed — Upwork's MCP server exposes a
+live RFC 7591 dynamic client registration endpoint that issues credentials
+instantly:
 
 ```bash
-node scripts/register-oauth-client.mjs https://your-host/api/upwork/callback
+node scripts/register-oauth-client.mjs http://localhost:3000/api/upwork/callback
 ```
 
+**Register the LOOPBACK address, even for a hosted portal.** Upwork's
+registration endpoint allowlists the redirect URI *host*: `localhost` and
+`127.0.0.1` on any port are accepted, along with a fixed set of MCP vendor
+hosts, and every other host is refused with `400 invalid_redirect_uri` —
+including your own domain. `sub.claude.ai` fails while `claude.ai` passes, so
+the match is exact. A hosted callback needs an approved Upwork API key, whose
+URL is set in their API Center; until then the loopback flow is the way in and
+it works fine.
+
+It prints two lines. Put them in `.env` (or `deploy/.env` on a server) along
+with the redirect URI, which must match the registration byte for byte at both
+authorize and token-exchange time:
+
+```
+UPWORK_CLIENT_ID=…
+UPWORK_CLIENT_SECRET=…          # only if the registration returned one
+UPWORK_REDIRECT_URI=http://localhost:3000/api/upwork/callback
+```
+
+Restart the portal so it picks them up: `docker compose up -d --force-recreate portal`.
+
+**How connecting then works.** Upwork sends the person back to
+`localhost:3000`, which is *their own machine*, not the server. Nothing is
+listening there, so the browser shows an error page — that is expected. The
+code is in the address bar; they copy the whole URL back into the portal. **Any
+dev server on port 3000 must be stopped first**, or it answers instead and
+swallows the code.
+
 Registrations **cannot be deleted** (`DELETE` returns 405), so run this once per
-environment. Full reasoning in [docs/01-research-findings.md §5](docs/01-research-findings.md).
+environment — not in a loop, not from a test suite. Full reasoning in
+[docs/01-research-findings.md §5](docs/01-research-findings.md).
 
 ## Verifying the schema
 

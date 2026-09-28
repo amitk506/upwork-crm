@@ -8,9 +8,17 @@
 -- conversation visibility while ranking below a manager on everything else. So
 -- the checks below are named after what they permit rather than who holds them.
 --
--- ALTER TYPE ... ADD VALUE cannot be used in the same transaction that creates
--- it, which is why this runs as separate autocommitted statements (psql without
--- --single-transaction). Keep the ADD VALUE first.
+-- ALTER TYPE ... ADD VALUE cannot be used in the same transaction as anything
+-- that casts a string literal to the new value's enum type — Postgres has not
+-- finished making 'team_lead' comparable yet. `psql` without --single-transaction
+-- (how deploy.sh runs migrations) autocommits each top-level statement, so the
+-- ADD VALUE below was never the problem there. But `supabase db push` wraps an
+-- entire migration file in one transaction, and can_read_all_conversations()
+-- below casts the literal 'team_lead' to app_role the moment this CREATE
+-- FUNCTION statement is parsed (SQL-language functions are parsed eagerly,
+-- unlike plpgsql). Comparing as ::text instead avoids ever casting the literal
+-- to app_role, so it never touches the restriction — regardless of which runner
+-- applies this file.
 -- ============================================================================
 
 do $$
@@ -36,7 +44,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select coalesce(public.app_user_role() in ('owner', 'manager', 'team_lead'), false);
+  select coalesce(public.app_user_role()::text in ('owner', 'manager', 'team_lead'), false);
 $$;
 
 comment on function public.can_read_all_conversations is

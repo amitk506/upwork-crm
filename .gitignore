@@ -36,6 +36,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# db backups — these hold real client data, never commit them
+/deploy/backups/
+
+# supabase CLI local state (project ref, pooler URL, tool versions)
+/supabase/.temp/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
