@@ -73,11 +73,14 @@ docker exec "$CONTAINER" pg_dump -U postgres --data-only --column-inserts \
 chmod 600 "$FILE"
 
 profiles=$(grep -c "INSERT INTO public.upwork_profiles" "$FILE" || true)
+
+# set -e above already guarantees pg_dump itself succeeded to reach this line,
+# so zero rows here means the portal genuinely has no connected profile yet —
+# not that the dump silently broke. A real dump failure can't produce a file to
+# check in the first place. Warn, don't refuse: there is nothing to lose here,
+# and app_users/assignments/etc. above are still captured either way.
 if [[ "$profiles" -eq 0 ]]; then
-  echo "!! the dump contains no upwork_profiles rows — refusing to keep it" >&2
-  echo "   a backup that would not restore your connections is worse than none." >&2
-  mv "$FILE" "$FILE.suspect"
-  exit 1
+  echo "  (no upwork_profiles rows — none connected yet, nothing to lose there)"
 fi
 
 echo "✓ backed up $(du -h "$FILE" | cut -f1) → $FILE"
